@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>StyleBiz | Multi-Vendor Marketplace</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <style>
+        /* ඔයාගේ පරණ ලස්සන UI එකම මම මෙතනට ගත්තා */
+        :root { --primary: #ff3366; --dark: #0f172a; --bg: #f4f7f9; --surface: #ffffff; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
+        body { background: var(--bg); padding-bottom: 80px; }
+        
+        .navbar { background: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .vendor-badge { background: #e2e8f0; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-top: 5px; display: inline-block; }
+        
+        /* අලුත් Vendor Button එකක් */
+        .btn-vendor { background: var(--dark); color: white; padding: 10px 20px; border-radius: 12px; text-decoration: none; font-size: 14px; font-weight: 600; }
+        
+        .product-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px; }
+        .card { background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); position: relative; }
+        .card img { width: 100%; height: 180px; object-fit: cover; }
+        .card-info { padding: 12px; }
+        
+        .admin-panel { display: none; position: fixed; inset: 0; background: white; z-index: 2000; overflow-y: auto; padding: 20px; }
+        .active { display: block !important; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar">
+        <h2 style="font-weight: 800; color: var(--primary);">StyleBiz</h2>
+        <div id="auth-buttons">
+            <button onclick="toggleAdmin()" class="btn-vendor">Seller Login</button>
+        </div>
+    </nav>
+
+    <div id="shop-view">
+        <div class="product-grid" id="product-list">
+            </div>
+    </div>
+
+    <div id="admin-panel" class="admin-panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h3>Seller Dashboard</h3>
+            <button onclick="toggleAdmin()" style="border:none; background:none; font-size:20px;">&times;</button>
+        </div>
+        
+        <div id="vendor-info" style="margin-bottom:20px; padding:15px; background:#f8fafc; border-radius:15px;">
+            <p id="user-display">Login to start selling</p>
+            <button onclick="handleAuth()" id="auth-btn" class="btn-vendor" style="margin-top:10px; width:100%;">Login / Register</button>
+        </div>
+
+        <div id="vendor-actions" style="display:none;">
+            <input type="text" id="p-name" placeholder="Product Name" style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:1px solid #ddd;">
+            <input type="number" id="p-price" placeholder="Price (Rs.)" style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:1px solid #ddd;">
+            <input type="text" id="p-img" placeholder="Image URL (Direct Link)" style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:1px solid #ddd;">
+            <button onclick="uploadProduct()" class="btn-vendor" style="width:100%; background:var(--primary);">Upload to Marketplace</button>
+            <p style="font-size:11px; color:gray; margin-top:10px;">* Admin takes 10% commission on every sale.</p>
+        </div>
+    </div>
+
+    <script>
+        // තරිඳු, ඔයාගේ පරණ Firebase Config එක මෙතනට දාන්න
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            databaseURL: "YOUR_DATABASE_URL",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const auth = firebase.auth();
+
+        let currentUser = null;
+
+        // Auth Logic
+        function handleAuth() {
+            const email = prompt("Enter Email:");
+            const pass = prompt("Enter Password:");
+            if(email && pass) {
+                auth.signInWithEmailAndPassword(email, pass)
+                    .catch(() => auth.createUserWithEmailAndPassword(email, pass));
+            }
+        }
+
+        auth.onAuthStateChanged(user => {
+            if(user) {
+                currentUser = user;
+                document.getElementById('user-display').innerText = "Seller: " + user.email;
+                document.getElementById('vendor-actions').style.display = "block";
+                document.getElementById('auth-btn').innerText = "Logout";
+                document.getElementById('auth-btn').onclick = () => auth.signOut();
+            } else {
+                currentUser = null;
+                document.getElementById('user-display').innerText = "Login to start selling";
+                document.getElementById('vendor-actions').style.display = "none";
+                document.getElementById('auth-btn').innerText = "Login / Register";
+                document.getElementById('auth-btn').onclick = handleAuth;
+            }
+        });
+
+        function uploadProduct() {
+            const name = document.getElementById('p-name').value;
+            const price = document.getElementById('p-price').value;
+            const img = document.getElementById('p-img').value;
+
+            if(!name || !price || !img) return alert("All fields required!");
+
+            db.ref('marketplace').push({
+                name: name,
+                price: price,
+                img: img,
+                vendor: currentUser.email,
+                vendorId: currentUser.uid,
+                commission: price * 0.1 // 10% Commission
+            });
+            alert("Product Live on Marketplace!");
+        }
+
+        db.ref('marketplace').on('value', snap => {
+            const data = snap.val();
+            let html = "";
+            for(let id in data) {
+                const p = data[id];
+                html += `
+                    <div class="card">
+                        <img src="${p.img}">
+                        <div class="card-info">
+                            <div style="font-weight:700;">${p.name}</div>
+                            <div style="color:var(--primary); font-weight:800;">Rs. ${p.price}</div>
+                            <div class="vendor-badge"><i class="fas fa-store"></i> ${p.vendor.split('@')[0]}</div>
+                            <button onclick="order('${p.name}', ${p.price}, '${p.vendor}')" style="width:100%; margin-top:10px; padding:8px; border-radius:8px; border:none; background:var(--dark); color:white; font-size:12px;">Order Now</button>
+                        </div>
+                    </div>
+                `;
+            }
+            document.getElementById('product-list').innerHTML = html;
+        });
+
+        function order(name, price, vendor) {
+            const msg = `New Order!\nProduct: ${name}\nPrice: Rs.${price}\nVendor: ${vendor}`;
+            window.open(`https://wa.me/94768639815?text=${encodeURIComponent(msg)}`);
+        }
+
+        function toggleAdmin() {
+            document.getElementById('admin-panel').classList.toggle('active');
+        }
+    </script>
+</body>
+</html>{
+  "rules": {
+    ".read": true,
+    ".write": "auth != null"
+  }
+}
